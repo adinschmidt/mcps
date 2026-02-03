@@ -68,10 +68,16 @@ Dev (auto-reload):
 bun run dev
 ```
 
-Run via bunx (after publishing to npm, or if installed globally):
+Run via bunx (from npm, if published):
 
 ```bash
 bunx --bun fastmail-mcp
+```
+
+Run via bunx directly from GitHub (no npm publish needed):
+
+```bash
+bunx --bun github:adinschmidt/fastmail-mcp
 ```
 
 ## MCP Client Config Examples
@@ -93,7 +99,7 @@ bunx --bun fastmail-mcp
 }
 ```
 
-If you prefer `bunx`:
+If you prefer `bunx` (npm):
 
 ```jsonc
 {
@@ -104,6 +110,24 @@ If you prefer `bunx`:
       "env": {
         "FASTMAIL_USERNAME": "you@fastmail.com",
         "FASTMAIL_APP_PASSWORD": "your-app-password"
+      }
+    }
+  }
+}
+```
+
+If you prefer `bunx` from GitHub:
+
+```jsonc
+{
+  "mcpServers": {
+    "fastmail": {
+      "command": "bunx",
+      "args": ["--bun", "github:adinschmidt/fastmail-mcp"],
+      "env": {
+        "FASTMAIL_USERNAME": "you@fastmail.com",
+        "FASTMAIL_APP_PASSWORD": "your-app-password",
+        "FASTMAIL_API_TOKEN": "your-fastmail-api-token"
       }
     }
   }
