@@ -104,12 +104,109 @@ async function listCalendarsWithRights(): Promise<any[]> {
   );
 }
 
+const PROTECTED_MAILBOX_ROLES = new Set([
+  'inbox',
+  'spam',
+  'trash',
+  'sent',
+  'drafts',
+  'archive',
+  'junk',
+]);
+
+const PROTECTED_MAILBOX_NAMES = new Set([
+  'inbox',
+  'spam',
+  'junk',
+  'trash',
+  'sent',
+  'drafts',
+  'archive',
+]);
+
+function assertMailboxCanBeDeleted(mailboxes: any[], mailboxId: string): void {
+  const mailbox = (mailboxes || []).find((m: any) => m?.id === mailboxId);
+  if (!mailbox) {
+    throw new Error(`Mailbox not found: ${mailboxId}`);
+  }
+
+  const role = typeof mailbox.role === 'string' ? mailbox.role.trim().toLowerCase() : '';
+  if (role && PROTECTED_MAILBOX_ROLES.has(role)) {
+    throw new Error(`Refusing to delete protected system mailbox with role "${mailbox.role}"`);
+  }
+
+  const name = typeof mailbox.name === 'string' ? mailbox.name.trim().toLowerCase() : '';
+  if (!role && name && PROTECTED_MAILBOX_NAMES.has(name)) {
+    throw new Error(`Refusing to delete protected mailbox "${mailbox.name}"`);
+  }
+}
+
 // Mail (JMAP)
 server.tool('list_mailboxes', 'List Fastmail mailboxes (JMAP)', async () => {
   const c = getJmapClient();
   const mailboxes = await c.listMailboxes();
   return asText(mailboxes);
 });
+
+server.tool(
+  'create_mailbox',
+  'Create a mailbox/folder (label) (JMAP)',
+  {
+    name: z.string().min(1).describe('Mailbox name'),
+    parentId: z.string().min(1).optional().describe('Optional parent mailbox id'),
+    role: z.string().min(1).optional().describe('Optional mailbox role (use only for special system-like mailboxes)'),
+    sortOrder: z.number().int().optional().describe('Optional sort order'),
+    isSubscribed: z.boolean().optional().describe('Optional subscribed flag'),
+  },
+  async ({ name, parentId, role, sortOrder, isSubscribed }) => {
+    const c = getJmapClient();
+    const created = await c.createMailbox({ name, parentId, role, sortOrder, isSubscribed });
+    return asText(created);
+  }
+);
+
+server.tool(
+  'update_mailbox',
+  'Update mailbox properties (JMAP)',
+  {
+    mailboxId: z.string().min(1),
+    name: z.string().min(1).optional(),
+    parentId: z.string().min(1).nullable().optional(),
+    sortOrder: z.number().int().optional(),
+    isSubscribed: z.boolean().optional(),
+  },
+  async ({ mailboxId, name, parentId, sortOrder, isSubscribed }) => {
+    if (
+      name === undefined &&
+      parentId === undefined &&
+      sortOrder === undefined &&
+      isSubscribed === undefined
+    ) {
+      throw new Error('At least one mailbox field must be provided');
+    }
+    const c = getJmapClient();
+    const updated = await c.updateMailbox(mailboxId, {
+      ...(name !== undefined ? { name } : {}),
+      ...(parentId !== undefined ? { parentId } : {}),
+      ...(sortOrder !== undefined ? { sortOrder } : {}),
+      ...(isSubscribed !== undefined ? { isSubscribed } : {}),
+    });
+    return asText(updated);
+  }
+);
+
+server.tool(
+  'delete_mailbox',
+  'Delete a mailbox/folder (label) (JMAP)',
+  { mailboxId: z.string().min(1) },
+  async ({ mailboxId }) => {
+    const c = getJmapClient();
+    const mailboxes = await c.listMailboxes();
+    assertMailboxCanBeDeleted(mailboxes, mailboxId);
+    await c.deleteMailbox(mailboxId);
+    return { content: [{ type: 'text', text: 'OK' }] };
+  }
+);
 
 server.tool(
   'list_emails',

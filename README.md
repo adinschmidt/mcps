@@ -135,6 +135,9 @@ If you prefer `bunx`:
 Mail (JMAP):
 
 - `list_mailboxes`
+- `create_mailbox`
+- `update_mailbox`
+- `delete_mailbox`
 - `list_emails`
 - `get_email`
 - `search_emails`
@@ -165,6 +168,7 @@ Contacts (CardDAV):
 ## Security Notes
 
 - Prefer app passwords (Fastmail Settings > Privacy & Security > App passwords).
+- `delete_mailbox` refuses to delete protected system mailboxes (for example Inbox, Spam, Trash, Sent, Drafts, Archive).
 
 ## Troubleshooting
 

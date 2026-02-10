@@ -1,6 +1,10 @@
 import { FastmailJmapAuth } from './auth.js';
 import { JmapRequest, JmapResponse, JmapSession } from './types.js';
 
+const JMAP_CORE_CAPABILITY = 'urn:ietf:params:jmap:core';
+const JMAP_MAIL_CAPABILITY = 'urn:ietf:params:jmap:mail';
+const JMAP_SUBMISSION_CAPABILITY = 'urn:ietf:params:jmap:submission';
+
 export class JmapClient {
   private auth: FastmailJmapAuth;
   private session: JmapSession | null = null;
@@ -47,14 +51,112 @@ export class JmapClient {
     return (await res.json()) as JmapResponse;
   }
 
+  private getMethodResult(res: JmapResponse, index: number, expectedMethodName: string): any {
+    const call = res.methodResponses[index];
+    if (!call) {
+      throw new Error(`JMAP response missing ${expectedMethodName}`);
+    }
+
+    const [name, body] = call;
+    if (name === 'error') {
+      const type = typeof body?.type === 'string' ? body.type : 'unknown';
+      const description = typeof body?.description === 'string' ? body.description : '';
+      throw new Error(`JMAP ${expectedMethodName} failed (${type})${description ? `: ${description}` : ''}`);
+    }
+    if (name !== expectedMethodName) {
+      throw new Error(`JMAP response mismatch: expected ${expectedMethodName}, got ${name}`);
+    }
+    return body;
+  }
+
+  private formatSetError(err: any): string {
+    const type = typeof err?.type === 'string' ? err.type : 'unknown';
+    const description = typeof err?.description === 'string' ? err.description : '';
+    return description ? `${type}: ${description}` : type;
+  }
+
   async listMailboxes(): Promise<any[]> {
     const session = await this.getSession();
     const req: JmapRequest = {
-      using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail'],
-      methodCalls: [['Mailbox/get', { accountId: session.accountId }, 'mb']]
+      using: [JMAP_CORE_CAPABILITY, JMAP_MAIL_CAPABILITY],
+      methodCalls: [['Mailbox/get', { accountId: session.accountId }, 'mb']],
     };
     const res = await this.request(req);
     return res.methodResponses[0]?.[1]?.list || [];
+  }
+
+  async createMailbox(input: {
+    name: string;
+    parentId?: string;
+    role?: string | null;
+    sortOrder?: number;
+    isSubscribed?: boolean;
+  }): Promise<any> {
+    const session = await this.getSession();
+    const createId = 'mbox';
+    const create: any = { name: input.name };
+    if (input.parentId !== undefined) create.parentId = input.parentId;
+    if (input.role !== undefined) create.role = input.role;
+    if (input.sortOrder !== undefined) create.sortOrder = input.sortOrder;
+    if (input.isSubscribed !== undefined) create.isSubscribed = input.isSubscribed;
+
+    const req: JmapRequest = {
+      using: [JMAP_CORE_CAPABILITY, JMAP_MAIL_CAPABILITY],
+      methodCalls: [['Mailbox/set', { accountId: session.accountId, create: { [createId]: create } }, 'mbSet']],
+    };
+    const res = await this.request(req);
+    const body = this.getMethodResult(res, 0, 'Mailbox/set');
+    const failed = body?.notCreated?.[createId];
+    if (failed) {
+      throw new Error(`Failed to create mailbox: ${this.formatSetError(failed)}`);
+    }
+
+    const created = body?.created?.[createId];
+    if (!created?.id) {
+      throw new Error('Mailbox creation did not return an id');
+    }
+    return created;
+  }
+
+  async updateMailbox(
+    mailboxId: string,
+    update: {
+      name?: string;
+      parentId?: string | null;
+      sortOrder?: number;
+      isSubscribed?: boolean;
+    }
+  ): Promise<any> {
+    if (Object.keys(update).length === 0) {
+      throw new Error('At least one mailbox property must be provided');
+    }
+
+    const session = await this.getSession();
+    const req: JmapRequest = {
+      using: [JMAP_CORE_CAPABILITY, JMAP_MAIL_CAPABILITY],
+      methodCalls: [['Mailbox/set', { accountId: session.accountId, update: { [mailboxId]: update } }, 'mbSet']],
+    };
+    const res = await this.request(req);
+    const body = this.getMethodResult(res, 0, 'Mailbox/set');
+    const failed = body?.notUpdated?.[mailboxId];
+    if (failed) {
+      throw new Error(`Failed to update mailbox ${mailboxId}: ${this.formatSetError(failed)}`);
+    }
+    return body?.updated?.[mailboxId] ?? { id: mailboxId };
+  }
+
+  async deleteMailbox(mailboxId: string): Promise<void> {
+    const session = await this.getSession();
+    const req: JmapRequest = {
+      using: [JMAP_CORE_CAPABILITY, JMAP_MAIL_CAPABILITY],
+      methodCalls: [['Mailbox/set', { accountId: session.accountId, destroy: [mailboxId] }, 'mbSet']],
+    };
+    const res = await this.request(req);
+    const body = this.getMethodResult(res, 0, 'Mailbox/set');
+    const failed = body?.notDestroyed?.[mailboxId];
+    if (failed) {
+      throw new Error(`Failed to delete mailbox ${mailboxId}: ${this.formatSetError(failed)}`);
+    }
   }
 
   async listEmails(mailboxId?: string, limit: number = 20): Promise<any[]> {
@@ -162,7 +264,7 @@ export class JmapClient {
   async getIdentities(): Promise<any[]> {
     const session = await this.getSession();
     const req: JmapRequest = {
-      using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:submission'],
+      using: [JMAP_CORE_CAPABILITY, JMAP_SUBMISSION_CAPABILITY],
       methodCalls: [['Identity/get', { accountId: session.accountId }, 'ids']],
     };
     const res = await this.request(req);
@@ -228,7 +330,7 @@ export class JmapClient {
     sentMailboxIds[sent.id] = true;
 
     const req: JmapRequest = {
-      using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:ietf:params:jmap:submission'],
+      using: [JMAP_CORE_CAPABILITY, JMAP_MAIL_CAPABILITY, JMAP_SUBMISSION_CAPABILITY],
       methodCalls: [
         ['Email/set', { accountId: session.accountId, create: { draft: emailObject } }, 'createEmail'],
         [
