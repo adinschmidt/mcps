@@ -12,7 +12,8 @@
     "start": "bun src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "bun build src/index.ts --outdir dist --target node --format esm",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "bun test"
   },
   "engines": {
     "node": ">=18",

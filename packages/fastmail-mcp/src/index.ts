@@ -342,6 +342,104 @@ server.tool('get_my_fastmail_calendars', 'Alias for list_calendars (CalDAV)', as
 });
 
 server.tool(
+  'create_calendar',
+  'Create a new calendar collection (CalDAV)',
+  {
+    name: z.string().min(1).describe('Display name for the new calendar'),
+    description: z.string().optional().describe('Calendar description'),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().describe('Calendar color as CSS hex (e.g. #FF0000)'),
+  },
+  async ({ name, description, color }) => {
+    const { caldav } = getDavClients();
+    await caldav.login();
+    const homeUrl = caldav.account?.homeUrl;
+    if (!homeUrl) throw new Error('Could not determine calendar home URL');
+
+    const id = crypto.randomUUID();
+    const url = `${homeUrl}${id}/`;
+
+    const props: Record<string, any> = { displayname: name };
+    if (description) props['c:calendar-description'] = description;
+    if (color) props['ca:calendar-color'] = color;
+
+    await caldav.makeCalendar({ url, props });
+    return asText({ calendarId: url, name });
+  }
+);
+
+server.tool(
+  'update_calendar',
+  'Update calendar properties (name, description, color) (CalDAV)',
+  {
+    calendarId: z.string().min(1).describe('Calendar URL from list_calendars'),
+    name: z.string().min(1).optional().describe('New display name'),
+    description: z.string().optional().describe('New description'),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().describe('New color as CSS hex (e.g. #FF0000)'),
+  },
+  async ({ calendarId, name, description, color }) => {
+    if (name === undefined && description === undefined && color === undefined) {
+      throw new Error('At least one property (name, description, color) must be provided');
+    }
+
+    const { caldav } = getDavClients();
+    await caldav.login();
+
+    const calendars = await caldav.fetchCalendars();
+    const calendar = (calendars || []).find((c: any) => c.url === calendarId);
+    if (!calendar) throw new Error('Calendar not found');
+
+    const rights = await getCalendarRights(caldav, calendarId);
+    if (rights && !rights.canWrite) {
+      throw new Error('This calendar is read-only.');
+    }
+
+    const setProps: Record<string, any> = {};
+    if (name !== undefined) setProps['displayname'] = name;
+    if (description !== undefined) setProps['c:calendar-description'] = description;
+    if (color !== undefined) setProps['ca:calendar-color'] = color;
+
+    await caldav.davRequest({
+      url: calendarId,
+      init: {
+        method: 'PROPPATCH',
+        namespace: 'd',
+        body: { propertyupdate: { set: { prop: setProps } } },
+        attributes: {
+          'xmlns:d': 'DAV:',
+          'xmlns:c': 'urn:ietf:params:xml:ns:caldav',
+          'xmlns:ca': 'http://apple.com/ns/ical/',
+        },
+      },
+    });
+
+    return { content: [{ type: 'text', text: 'OK' }] };
+  }
+);
+
+server.tool(
+  'delete_calendar',
+  'Delete a calendar collection (CalDAV). Refuses to delete the last remaining calendar.',
+  {
+    calendarId: z.string().min(1).describe('Calendar URL from list_calendars'),
+  },
+  async ({ calendarId }) => {
+    const { caldav } = getDavClients();
+    await caldav.login();
+
+    const calendars = await caldav.fetchCalendars();
+    const calendar = (calendars || []).find((c: any) => c.url === calendarId);
+    if (!calendar) throw new Error('Calendar not found');
+
+    if ((calendars || []).length <= 1) {
+      throw new Error('Refusing to delete the last remaining calendar.');
+    }
+
+    await caldav.deleteObject({ url: calendarId });
+    return { content: [{ type: 'text', text: 'OK' }] };
+  }
+);
+
+server.tool(
   'get_calendar_event',
   'Get a calendar event by id (event URL) (CalDAV)',
   { eventId: z.string().min(1) },
