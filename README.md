@@ -1,6 +1,8 @@
 # mcps
 
-Index of my Model Context Protocol (MCP) servers:
+A collection of my MCP (Model Context Protocol) servers.
 
-- [fastmail-mcp](https://github.com/adinschmidt/fastmail-mcp) - Fastmail mail (JMAP) + calendar (CalDAV) + contacts (CardDAV)
-- [splitwise-mcp](https://github.com/adinschmidt/splitwise-mcp) - Splitwise full public API coverage
+| Package | Description |
+|---------|-------------|
+| [fastmail-mcp](https://github.com/adinschmidt/fastmail-mcp) | Mail (JMAP), calendar (CalDAV), and contacts (CardDAV) for Fastmail |
+| [splitwise-mcp](https://github.com/adinschmidt/splitwise-mcp) | All 27 endpoints from the Splitwise API |
