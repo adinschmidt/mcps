@@ -1,8 +1,2 @@
-.DS_Store
-.env
-.env.*
-
-node_modules
-dist
-
-.beads
+fastmail-mcp/
+splitwise-mcp/
